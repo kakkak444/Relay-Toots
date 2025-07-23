@@ -17,6 +17,7 @@ module Data.Twitter
     , mkPost
     , postMaxChars
     , postUrlChars
+    , text
     ) where
 
 import Prelude                                hiding (truncate)

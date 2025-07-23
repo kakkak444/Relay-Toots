@@ -23,7 +23,7 @@ import Data.Time
 import Data.Text                  qualified as T
 import Data.Text.Encoding         qualified as T
 import Data.Text.IO               qualified as T
-import Data.Twitter
+import Data.Twitter                         as P
 import Network.HTTP.Req
 
 
@@ -44,6 +44,7 @@ instance Exception SendingPostError
 tweet :: Token -> Post -> IO (Either SendingPostError ())
 tweet token post = do
     logInfo "tweeting !"
+    logInfo $ "text: " <> P.text post
     -- handle
     --     (\(e :: HttpException) ->
     --         case isStatusCodeException e of
