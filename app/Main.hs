@@ -48,6 +48,7 @@ import TootReceiver
 data Env = Env
     { secretKey     :: BS.ByteString
     , credential    :: Credential
+    , targetUser    :: T.Text
     , catchingTag   :: T.Text
     , tokenFilePath :: FilePath
     , port          :: Int
@@ -61,6 +62,7 @@ loadEnv = do
     clientSecret <- T.pack   <$> getEnv "X_API_CLIENT_SECRET"
 
     catchingTag   <- T.toLower . T.pack <$> getEnv "RELAY_TAG"
+    targetUser    <- T.pack <$> getEnv "TARGET"
     tokenFilePath <- getEnv "TOKEN_PATH"
 
     port <- readIO =<< getEnvDefault "PORT" "3000"
@@ -68,6 +70,7 @@ loadEnv = do
     return $ Env { secretKey
                  , credential = Credential { clientId, clientSecret }
                  , catchingTag
+                 , targetUser
                  , tokenFilePath
                  , port
                  }
@@ -156,7 +159,7 @@ main = do
 
                 if not locked then do
                     token <- readMVar tokenRef
-                    res <- sendToot (catchingTag env) token $ eventObject event
+                    res <- sendToot (targetUser env) (catchingTag env) token $ eventObject event
                     case res of
                         Right () -> return ()
                         Left (TooManyRequests Nothing) -> do
@@ -180,9 +183,10 @@ main = do
 threadDelay' :: NominalDiffTime -> IO ()
 threadDelay' diff = threadDelay $ P.truncate $ diff * 10 ^ (6 :: Int)
 
-sendToot :: T.Text -> Token -> Toot -> IO (Either SendingPostError ())
-sendToot catchingTag token toot
+sendToot :: T.Text -> T.Text -> Token -> Toot -> IO (Either SendingPostError ())
+sendToot targetUser catchingTag token toot
     | V.elem catchingTag . V.map T.toLower . V.map tagName $ tootTags toot
+    , targetUser == acctUsername (tootAccount toot)
     , Just tweet' <- tootToTweet catchingTag toot
         = tweet token tweet'
     | otherwise = return $ Right ()
