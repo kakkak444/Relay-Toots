@@ -103,10 +103,10 @@ logJsonInfo :: (ToJSON a) => a -> IO ()
 logJsonInfo json = logInfo $ BS.toStrict $ "event = " <> encode json
 
 logInfo :: BS.ByteString -> IO ()
-logInfo text = BS8.putStrLn $ "[INFO] " <> text
+logInfo text = T.putStrLn . T.decodeUtf8 $ "[INFO] " <> text
 
 logError :: BS.ByteString -> IO ()
-logError text = BS8.putStrLn $ "[ERROR] " <> text
+logError text = T.putStrLn . T.decodeUtf8 $ "[ERROR] " <> text
 
 canReadWrite :: FilePath -> IO Bool
 canReadWrite file = fileAccess file True True False
