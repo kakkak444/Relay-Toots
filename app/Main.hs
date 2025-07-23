@@ -44,9 +44,10 @@ import TootReceiver
 
 
 data Env = Env
-    { secretKey   :: BS.ByteString
-    , credential  :: Credential
-    , catchingTag :: T.Text
+    { secretKey     :: BS.ByteString
+    , credential    :: Credential
+    , catchingTag   :: T.Text
+    , tokenFilePath :: FilePath
     }
 
 loadEnv :: IO Env
@@ -56,9 +57,14 @@ loadEnv = do
     clientId     <- T.pack   <$> getEnv "X_API_CLIENT_ID"
     clientSecret <- T.pack   <$> getEnv "X_API_CLIENT_SECRET"
 
-    catchingTag  <- T.toLower . T.pack <$> getEnv "RELAY_TAG"
+    catchingTag   <- T.toLower . T.pack <$> getEnv "RELAY_TAG"
+    tokenFilePath <- getEnv "TOKEN_PATH"
 
-    return $ Env { secretKey, credential = Credential { clientId, clientSecret }, catchingTag }
+    return $ Env { secretKey
+                 , credential = Credential { clientId, clientSecret }
+                 , catchingTag
+                 , tokenFilePath
+                 }
 
 
 type HealthCheckAPI  = Get '[PlainText] T.Text
@@ -104,14 +110,14 @@ logError text = BS8.putStrLn $ "[ERROR] " <> text
 canReadWrite :: FilePath -> IO Bool
 canReadWrite file = fileAccess file True True False
 
-checkTokenFile :: IO ()
-checkTokenFile = do
-    exists <- fileExist "./Tokens"
+checkTokenFile :: FilePath -> IO ()
+checkTokenFile tokenFile = do
+    exists <- fileExist tokenFile
     unless exists $ do
         logError "Token file does not exist."
         exitFailure
 
-    has_proper_permission <- canReadWrite "./Tokens"
+    has_proper_permission <- canReadWrite tokenFile
     unless has_proper_permission $ do
         logError "Token file does not have proper permission (the file must have read and write permission)."
         exitFailure
@@ -120,13 +126,13 @@ main :: IO ()
 main = do
     env <- loadEnv
 
-    checkTokenFile
+    checkTokenFile (tokenFilePath env)
 
-    initToken <- readToken "./Tokens"
+    initToken <- readToken (tokenFilePath env)
     tokenRef <- tokenRefresher 5
                                (credential env)
                                initToken
-                               (\token -> logInfo "token refreshed" >> writeToken "./Tokens" token)
+                               (\token -> logInfo "token refreshed" >> writeToken (tokenFilePath env) token)
 
     tweetLock <- newMVar False
 
