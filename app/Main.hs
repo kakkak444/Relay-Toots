@@ -32,7 +32,9 @@ import Network.Wai.Handler.Warp
 import Network.Wai.Logger                                (withStdoutLogger)
 import PostSender                           as PS
 import Servant
-import System.Environment
+import System.Environment                                (getEnv)
+import System.Exit
+import System.Posix.Files                                (fileAccess, fileExist)
 import Text.Pandoc.Class                                 (runPure)
 import Text.Pandoc.Options
 import Text.Pandoc.Readers.HTML
@@ -96,9 +98,29 @@ logJsonInfo json = logInfo $ BS.toStrict $ "event = " <> encode json
 logInfo :: BS.ByteString -> IO ()
 logInfo text = BS8.putStrLn $ "[INFO] " <> text
 
+logError :: BS.ByteString -> IO ()
+logError text = BS8.putStrLn $ "[ERROR] " <> text
+
+canReadWrite :: FilePath -> IO Bool
+canReadWrite file = fileAccess file True True False
+
+checkTokenFile :: IO ()
+checkTokenFile = do
+    exists <- fileExist "./Tokens"
+    unless exists $ do
+        logError "Token file does not exist."
+        exitFailure
+
+    has_proper_permission <- canReadWrite "./Tokens"
+    unless has_proper_permission $ do
+        logError "Token file does not have proper permission (the file must have read and write permission)."
+        exitFailure
+
 main :: IO ()
 main = do
     env <- loadEnv
+
+    checkTokenFile
 
     initToken <- readToken "./Tokens"
     tokenRef <- tokenRefresher 5

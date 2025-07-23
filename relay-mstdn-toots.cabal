@@ -86,6 +86,7 @@ executable relay-mstdn-toots
                     , servant-server    ^>= 0.20
                     , text
                     , time              ^>= 1.14
+                    , unix              ^>= 2.8
                     , vector
                     , wai
                     , wai-logger
