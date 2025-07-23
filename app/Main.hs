@@ -33,6 +33,7 @@ import Network.Wai.Logger                                (withStdoutLogger)
 import PostSender                           as PS
 import Servant
 import System.Environment                                (getEnv)
+import System.Environment.Blank                          (getEnvDefault)
 import System.Exit
 import System.IO
 import System.Posix.Files                                (fileAccess, fileExist)
@@ -49,6 +50,7 @@ data Env = Env
     , credential    :: Credential
     , catchingTag   :: T.Text
     , tokenFilePath :: FilePath
+    , port          :: Int
     }
 
 loadEnv :: IO Env
@@ -61,10 +63,13 @@ loadEnv = do
     catchingTag   <- T.toLower . T.pack <$> getEnv "RELAY_TAG"
     tokenFilePath <- getEnv "TOKEN_PATH"
 
+    port <- readIO =<< getEnvDefault "PORT" "3000"
+
     return $ Env { secretKey
                  , credential = Credential { clientId, clientSecret }
                  , catchingTag
                  , tokenFilePath
+                 , port
                  }
 
 
@@ -143,7 +148,7 @@ main = do
 
     -- TODO: 未送信のポストをキューやらに格納させる
     withStdoutLogger $ \logger ->
-        let settings = setPort 8080 $ setLogger logger defaultSettings
+        let settings = setPort (port env) $ setLogger logger defaultSettings
             cont event = do
                 logJsonInfo event
 
