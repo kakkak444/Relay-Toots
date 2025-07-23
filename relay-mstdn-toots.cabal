@@ -80,6 +80,7 @@ executable relay-mstdn-toots
                     , lens              ^>= 5.3
                     , lens-aeson        ^>= 1.2
                     , network-uri       ^>= 2.6
+                    , mtl               ^>= 2.3
                     , pandoc            ^>= 3.7
                     , req               ^>= 3.13
                     , servant
@@ -94,6 +95,7 @@ executable relay-mstdn-toots
 
     other-modules:    Data.Event
                       Data.Twitter
+                      Env
                       TokenRefresher
                       TootReceiver
                       PostSender
