@@ -17,13 +17,11 @@ import Control.Concurrent
 import Control.Exception                                 (bracket_)
 import Control.Monad
 import Control.Monad.IO.Class                            (liftIO)
-import Data.Aeson
 import Data.Bifunctor                                    (first)
 import Data.ByteString            qualified as BS
 import Data.ByteString.Char8      qualified as BS8
 import Data.Event
 import Data.Text                  qualified as T
-import Data.Text.Encoding         qualified as T
 import Data.Text.IO               qualified as T
 import Data.Time.Clock
 import Data.Twitter                         as TW
@@ -75,7 +73,6 @@ loadEnv = do
                  , port
                  }
 
-
 type HealthCheckAPI  = Get '[PlainText] T.Text
 type ServerAPI = HealthCheckAPI :<|> TootReceiverAPI
 
@@ -107,14 +104,11 @@ server secretKey cont = healthCheck :<|> tootReceiver secretKey cont
 app :: BS.ByteString -> (Event -> IO ()) -> Application
 app secretKey cont = serve serverApi (server secretKey cont)
 
-logJsonInfo :: (ToJSON a) => a -> IO ()
-logJsonInfo json = logInfo $ BS.toStrict $ "event = " <> encode json
+logInfo :: T.Text -> IO ()
+logInfo text = T.putStrLn $ "[INFO] " <> text
 
-logInfo :: BS.ByteString -> IO ()
-logInfo text = T.putStrLn . T.decodeUtf8 $ "[INFO] " <> text
-
-logError :: BS.ByteString -> IO ()
-logError text = T.putStrLn . T.decodeUtf8 $ "[ERROR] " <> text
+logError :: T.Text -> IO ()
+logError text = T.putStrLn $ "[ERROR] " <> text
 
 canReadWrite :: FilePath -> IO Bool
 canReadWrite file = fileAccess file True True False
@@ -133,7 +127,7 @@ checkTokenFile tokenFile = do
 
 main :: IO ()
 main = do
-    hSetBuffering stdout LineBuffering
+    hSetBuffering stdout NoBuffering
 
     env <- loadEnv
 
@@ -153,8 +147,6 @@ main = do
     withStdoutLogger $ \logger ->
         let settings = setPort (port env) $ setLogger logger defaultSettings
             cont event = do
-                logJsonInfo event
-
                 locked <- readMVar tweetLock
 
                 if not locked then do
@@ -163,18 +155,18 @@ main = do
                     case res of
                         Right () -> return ()
                         Left (TooManyRequests Nothing) -> do
-                            logInfo $ "reach rate limit. block until " <> BS8.pack (show (15 * 60 :: Int))
+                            logInfo $ "reach rate limit. block until " <> T.pack (show (15 * 60 :: Int))
                             void $ forkIO $ bracket_ (swapMVar tweetLock True)
                                                      (swapMVar tweetLock False)
                                                      (threadDelay' $ 15 * 60)
                         Left (TooManyRequests (Just reset)) -> do
-                            logInfo $ "reach rate limit. block until " <> BS8.pack (show reset)
+                            logInfo $ "reach rate limit. block until " <> T.pack (show reset)
                             currTime <- getCurrentTime
                             void $ forkIO $ bracket_ (swapMVar tweetLock True)
                                                      (swapMVar tweetLock False)
                                                      (threadDelay' $ diffUTCTime reset currTime)
                         Left PS.Unauthorized -> logInfo "token may be expired"
-                        Left (Other msg) -> logInfo $ T.encodeUtf8 msg
+                        Left (Other msg) -> logInfo msg
                 else
                     logInfo "now blocked"
         in

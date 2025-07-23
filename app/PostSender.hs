@@ -18,7 +18,6 @@ import Control.Monad.Catch
 import Control.Monad.IO.Class                     (liftIO)
 import Data.Aeson
 import Data.Aeson.Lens
-import Data.ByteString            qualified as BS
 import Data.Time
 import Data.Text                  qualified as T
 import Data.Text.Encoding         qualified as T
@@ -26,9 +25,6 @@ import Data.Text.IO               qualified as T
 import Data.Twitter                         as P
 import Network.HTTP.Req
 
-
-logJsonInfo :: (ToJSON a) => a -> IO ()
-logJsonInfo json = logInfo $ T.decodeUtf8 $ BS.toStrict $ "event = " <> encode json
 
 logInfo :: T.Text -> IO ()
 logInfo text = T.putStrLn $ "[INFO] " <> text
@@ -44,7 +40,7 @@ instance Exception SendingPostError
 tweet :: Token -> Post -> IO (Either SendingPostError ())
 tweet token post = do
     logInfo "tweeting !"
-    logInfo $ "text: " <> P.text post
+    -- logInfo $ "text: " <> P.text post
     -- handle
     --     (\(e :: HttpException) ->
     --         case isStatusCodeException e of
@@ -58,12 +54,11 @@ tweet token post = do
     --                         throwM e
     --     )
     runReq defaultHttpConfig { httpConfigCheckResponse = \_ _ _ -> Nothing } $ do
-        res <- req POST
+        res :: JsonResponse Value <- req POST
                 (https "api.x.com" /: "2" /: "tweets")
                 (ReqBodyJson post)
                 jsonResponse
                 (oAuth2Bearer $ T.encodeUtf8 $ accessToken token)
-        liftIO $ logJsonInfo (responseBody res :: Value)
         let scode = responseStatusCode res
         if 200 <= scode && scode < 300 then
             return $ Right ()
