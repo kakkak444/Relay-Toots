@@ -188,13 +188,13 @@ tootToTweet catchingTag (Toot { tootContent = content, tootUrl = url }) =
     in
         case url of
             Nothing   -> mkPost <$> content'
-            Just url' -> mkPost . addUrl url' . truncate (postMaxChars - postUrlChars - 1) <$> content'
+            Just url' -> mkPost . addUrl url' . truncate (postMaxChars - postUrlChars - 2 - P.length ("[ｆｒｏｍ]:" :: String)) <$> content'
 
 removeHashTag :: T.Text -> T.Text -> T.Text
 removeHashTag tagName content = T.unlines . filter ((/= ("#" <> T.toLower tagName)) . T.toLower) . T.lines $ content
 
 addUrl :: URI -> T.Text -> T.Text
-addUrl url text = text <> "\n\n" <> T.show url
+addUrl url text = text <> "\n\n" <> "[ｆｒｏｍ]:" <> T.show url
 
 htmlToPlain :: T.Text -> Either T.Text T.Text
 htmlToPlain html = first T.show $ runPure $ readHtml def html >>= writePlain def
