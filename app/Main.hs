@@ -34,6 +34,7 @@ import PostSender                           as PS
 import Servant
 import System.Environment                                (getEnv)
 import System.Exit
+import System.IO
 import System.Posix.Files                                (fileAccess, fileExist)
 import Text.Pandoc.Class                                 (runPure)
 import Text.Pandoc.Options
@@ -124,6 +125,8 @@ checkTokenFile tokenFile = do
 
 main :: IO ()
 main = do
+    hSetBuffering stdout LineBuffering
+
     env <- loadEnv
 
     checkTokenFile (tokenFilePath env)
