@@ -162,12 +162,10 @@ sendToot toot = do
 --     | otherwise = return $ Right ()
 
 tootToTweet :: T.Text -> Toot -> Maybe TW.Post
-tootToTweet catchingTag (Toot { tootContent = content, tootUrl = url }) =
+tootToTweet catchingTag (Toot { tootContent = content, tootUrl = _url }) =
     let content' = either (const Nothing) (Just . removeHashTag catchingTag) $ htmlToPlain $ content
     in
-        case url of
-            Nothing   -> mkPost <$> content'
-            Just url' -> mkPost . addUrl url' . truncate (postMaxChars - postUrlChars - 2 - P.length ("[ｆｒｏｍ]:" :: String)) <$> content'
+        mkPost <$> content'
 
 removeHashTag :: T.Text -> T.Text -> T.Text
 removeHashTag tagName content = T.unlines . filter ((/= ("#" <> T.toLower tagName)) . T.toLower) . T.lines $ content
