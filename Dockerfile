@@ -10,4 +10,6 @@ FROM gcr.io/distroless/static-debian12:latest
 WORKDIR /
 COPY --from=build /dist/relay-mstdn-toots /
 
+ENV LANG=C.UTF-8
+
 ENTRYPOINT ["/relay-mstdn-toots"]
