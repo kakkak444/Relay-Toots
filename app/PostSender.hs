@@ -13,9 +13,10 @@ module PostSender
     , refresh
     ) where
 
+import App
 import Control.Lens
 import Control.Monad.Catch
-import Control.Monad.IO.Class                     (liftIO)
+import Control.Monad.IO.Class                     (MonadIO, liftIO)
 import Data.Aeson
 import Data.Aeson.Lens
 import Data.ByteString            qualified as BS
@@ -30,8 +31,8 @@ import Network.HTTP.Req
 logJsonInfo :: (ToJSON a) => a -> IO ()
 logJsonInfo json = logInfo $ T.decodeUtf8 $ BS.toStrict $ "event = " <> encode json
 
-logInfo :: T.Text -> IO ()
-logInfo text = T.putStrLn $ "[INFO] " <> text
+logInfo :: (MonadIO m) => T.Text -> m ()
+logInfo text = liftIO $ T.putStrLn $ "[INFO] " <> text
 
 data SendingPostError
     = Unauthorized
@@ -41,8 +42,9 @@ data SendingPostError
 
 instance Exception SendingPostError
 
-tweet :: Token -> Post -> IO (Either SendingPostError ())
-tweet token post = do
+tweet :: (MonadIO m, HasTwitterToken m) => Post -> m (Either SendingPostError ())
+tweet post = do
+    token <- askTwitterToken
     logInfo "tweeting !"
     logInfo $ "text: " <> P.text post
     -- handle
@@ -76,7 +78,7 @@ tweet token post = do
         else
             return $ Left $ Other $ T.decodeUtf8 $ responseStatusMessage res
 
-refresh :: Credential -> Token -> IO (Maybe Token)
+refresh :: (MonadIO m) => Credential -> Token -> m (Maybe Token)
 refresh cred (Token { refreshToken }) = do
     runReq defaultHttpConfig $ do
         res <- req POST

@@ -15,6 +15,8 @@ module TootReceiver
     , tootReceiverApi
     ) where
 
+import App
+import Control.Monad
 import Control.Monad.IO.Class                     (liftIO)
 import Crypto.Hash
 import Crypto.MAC.HMAC
@@ -45,12 +47,11 @@ calculateSignature :: ByteString -> LB.ByteString -> Digest SHA256
 calculateSignature key = hmacGetDigest . hmacLazy key
 
 
-tootReceiver :: ByteString -> (Event -> IO ()) -> Maybe T.Text -> (LB.ByteString, Event) -> Handler NoContent
-tootReceiver _secretKey _cont Nothing          _            = return NoContent
-tootReceiver  secretKey  cont (Just signature) (raw, event)
-    | calcSig /= signature = return NoContent
-    | otherwise = do
-        liftIO $ cont event
-        return NoContent
-  where
-    calcSig = T.pack $ "sha256=" <> show (calculateSignature secretKey raw)
+tootReceiver :: (Event -> AppT IO ()) -> Maybe T.Text -> (LB.ByteString, Event) -> AppT Handler NoContent
+tootReceiver _cont Nothing          _ = return NoContent
+tootReceiver  cont (Just signature) (raw, event) = do
+    secretKey <- askSecretKey
+    let calcSig = T.pack $ "sha256=" <> show (calculateSignature secretKey raw)
+    unless (calcSig /= signature) $ do
+        hoistApp liftIO $ cont event
+    return NoContent
