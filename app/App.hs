@@ -8,9 +8,10 @@
 {-# LANGUAGE DerivingStrategies #-}
 
 module App
-    ( AppT
+    ( module Env
+
+    , AppT
     , hoistApp
-    , loadEnv
     , runApp
 
     , HasSecretKey(..)
