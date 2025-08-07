@@ -13,7 +13,6 @@ module Data.Twitter
     , Token(..)
     , Post
 
-    , credentialToBase64
     , mkPost
     , postMaxChars
     , postUrlChars
@@ -23,10 +22,7 @@ module Data.Twitter
 import Prelude                                hiding (truncate)
 
 import Data.Aeson
-import Data.ByteString        qualified as BS
-import Data.ByteString.Base64 qualified as BS
 import Data.Text              qualified as T
-import Data.Text.Encoding     qualified as T
 import Data.Time.Clock
 import GHC.Generics
 
@@ -64,9 +60,3 @@ mkPost text = Post { text = text' }
             text
         else
             T.take (postMaxChars - 3) text <> "..."
-
-credentialToBase64 :: Credential -> BS.ByteString
-credentialToBase64 (Credential { clientId, clientSecret }) =
-    let content = T.encodeUtf8 $ clientId <> ":" <> clientSecret
-    in
-        BS.encode content

@@ -8,10 +8,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Main where
-
-import Prelude                                    hiding (truncate)
-import Prelude                    qualified as P
+module Main (main) where
 
 import App
 import Control.Monad
@@ -36,7 +33,6 @@ import Text.Pandoc.Writers
 import TokenRefresher
 import TootReceiver
 import UnliftIO                                   hiding (Handler)
-import UnliftIO.Concurrent
 
 
 runWithEnv :: (MonadIO m) => ReaderT Env m a -> m a
@@ -44,9 +40,6 @@ runWithEnv app = loadEnv >>= runReaderT app
 
 type HealthCheckAPI  = Get '[PlainText] T.Text
 type ServerAPI = HealthCheckAPI :<|> TootReceiverAPI
-
-healthCheckApi :: Proxy HealthCheckAPI
-healthCheckApi = Proxy
 
 serverApi :: Proxy ServerAPI
 serverApi = Proxy
@@ -130,9 +123,6 @@ main = do
             let settings = setPort port . setLogger logger $ defaultSettings
             runSettings settings $ serve serverApi $ hoistServer serverApi (runApp env tokenRef) (server relay)
 
-threadDelay' :: NominalDiffTime -> IO ()
-threadDelay' diff = threadDelay $ P.truncate $ diff * 10 ^ (6 :: Int)
-
 sendToot :: (MonadIO m) => Toot -> AppT m (Either SendingPostError ())
 sendToot toot = do
     contain <- containTargetTag
@@ -170,17 +160,5 @@ tootToTweet catchingTag (Toot { tootContent = content, tootUrl = _url }) =
 removeHashTag :: T.Text -> T.Text -> T.Text
 removeHashTag tagName content = T.unlines . filter ((/= ("#" <> T.toLower tagName)) . T.toLower) . T.lines $ content
 
-addUrl :: URI -> T.Text -> T.Text
-addUrl url text = text <> "\n\n" <> "[ｆｒｏｍ]:" <> T.show url
-
 htmlToPlain :: T.Text -> Either T.Text T.Text
 htmlToPlain html = first T.show $ runPure $ readHtml def html >>= writePlain def
-
-truncate :: Int -> T.Text -> T.Text
-truncate len text =
-    if T.length text <= len then
-        text
-    else
-        text'
-  where
-    text' = T.take (len - 3) text <> "..."
