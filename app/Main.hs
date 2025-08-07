@@ -42,7 +42,6 @@ import UnliftIO.Concurrent
 runWithEnv :: (MonadIO m) => ReaderT Env m a -> m a
 runWithEnv app = loadEnv >>= runReaderT app
 
-
 type HealthCheckAPI  = Get '[PlainText] T.Text
 type ServerAPI = HealthCheckAPI :<|> TootReceiverAPI
 
@@ -71,7 +70,6 @@ writeToken token = do
 
 server :: (Event -> AppT IO ()) -> ServerT ServerAPI (AppT Handler)
 server cont = healthCheck :<|> tootReceiver cont
-
 
 logInfo :: (MonadIO m) => T.Text -> m ()
 logInfo text = liftIO $ T.putStrLn $ "[INFO] " <> text
