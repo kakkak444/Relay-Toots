@@ -10,12 +10,13 @@ module TokenRefresher
     , tokenRefresher
     ) where
 
-import Control.Concurrent
-import Control.Exception
+import App
 import Data.Maybe
 import Data.Time.Clock
 import Data.Twitter
-import PostSender         (refresh)
+import PostSender                             (refresh)
+import UnliftIO
+import UnliftIO.Concurrent
 
 
 data TokenRefreshError
@@ -32,8 +33,9 @@ defaultExpiresIn = 3600
 defaultInterval :: NominalDiffTime
 defaultInterval = 30
 
-tokenRefresher :: Int -> Credential -> Token -> (Token -> IO ()) -> IO (MVar Token)
-tokenRefresher maxRetry cred initToken fn = do
+tokenRefresher :: forall m. (MonadUnliftIO m, MonadIO m, HasCredential m) => Int -> (Token -> m ()) -> Token -> m (MVar Token)
+tokenRefresher maxRetry fn initToken = do
+    cred <- askCredential
     newToken <- refresh cred initToken
     case newToken of
         Nothing -> throwIO TokenRefreshFailed
@@ -44,10 +46,11 @@ tokenRefresher maxRetry cred initToken fn = do
             _ <- forkIO $ threadDelay' expiresIn' >> go 0 tokenRef
             return tokenRef
   where
-    go :: Int -> MVar Token -> IO a
+    go :: Int -> MVar Token -> m a
     go !retried tokenRef
         | retried >= maxRetry = throwIO TokenRefreshFailed
         | otherwise = do
+            cred <- askCredential
             oldToken <- readMVar tokenRef
             newToken <- modifyMVar tokenRef $ \token -> do
                 newToken <- refresh cred token
@@ -61,5 +64,5 @@ tokenRefresher maxRetry cred initToken fn = do
                 let expiresIn' = fromMaybe defaultExpiresIn $ expiresIn newToken
                 threadDelay' expiresIn' >> go 0 tokenRef
 
-threadDelay' :: NominalDiffTime -> IO ()
+threadDelay' :: (MonadIO m) => NominalDiffTime -> m ()
 threadDelay' diff = threadDelay $ truncate $ diff * 10 ^ (6 :: Int)

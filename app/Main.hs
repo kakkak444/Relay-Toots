@@ -13,13 +13,10 @@ module Main where
 import Prelude                                    hiding (truncate)
 import Prelude                    qualified as P
 
-import Control.Concurrent
-import Control.Exception                                 (bracket_)
+import App
 import Control.Monad
-import Control.Monad.IO.Class                            (liftIO)
+import Control.Monad.Reader
 import Data.Bifunctor                                    (first)
-import Data.ByteString            qualified as BS
-import Data.ByteString.Char8      qualified as BS8
 import Data.Event
 import Data.Text                  qualified as T
 import Data.Text.IO               qualified as T
@@ -30,10 +27,7 @@ import Network.Wai.Handler.Warp
 import Network.Wai.Logger                                (withStdoutLogger)
 import PostSender                           as PS
 import Servant
-import System.Environment                                (getEnv)
-import System.Environment.Blank                          (getEnvDefault)
 import System.Exit
-import System.IO
 import System.Posix.Files                                (fileAccess, fileExist)
 import Text.Pandoc.Class                                 (runPure)
 import Text.Pandoc.Options
@@ -41,37 +35,12 @@ import Text.Pandoc.Readers.HTML
 import Text.Pandoc.Writers
 import TokenRefresher
 import TootReceiver
+import UnliftIO                                   hiding (Handler)
+import UnliftIO.Concurrent
 
 
-data Env = Env
-    { secretKey     :: BS.ByteString
-    , credential    :: Credential
-    , targetUser    :: T.Text
-    , catchingTag   :: T.Text
-    , tokenFilePath :: FilePath
-    , port          :: Int
-    }
-
-loadEnv :: IO Env
-loadEnv = do
-    secretKey    <- BS8.pack <$> getEnv "WEBHOOK_SECRET_KEY"
-
-    clientId     <- T.pack   <$> getEnv "X_API_CLIENT_ID"
-    clientSecret <- T.pack   <$> getEnv "X_API_CLIENT_SECRET"
-
-    catchingTag   <- T.toLower . T.pack <$> getEnv "RELAY_TAG"
-    targetUser    <- T.pack <$> getEnv "TARGET"
-    tokenFilePath <- getEnv "TOKEN_PATH"
-
-    port <- readIO =<< getEnvDefault "PORT" "3000"
-
-    return $ Env { secretKey
-                 , credential = Credential { clientId, clientSecret }
-                 , catchingTag
-                 , targetUser
-                 , tokenFilePath
-                 , port
-                 }
+runWithEnv :: (MonadIO m) => ReaderT Env m a -> m a
+runWithEnv app = loadEnv >>= runReaderT app
 
 type HealthCheckAPI  = Get '[PlainText] T.Text
 type ServerAPI = HealthCheckAPI :<|> TootReceiverAPI
@@ -82,106 +51,115 @@ healthCheckApi = Proxy
 serverApi :: Proxy ServerAPI
 serverApi = Proxy
 
-healthCheck :: Handler T.Text
+healthCheck :: AppT Handler T.Text
 healthCheck = do
     liftIO $ putStrLn "health checked !"
     return $ T.pack "healthy"
 
 
-readToken :: FilePath -> IO Token
-readToken file = do
-    accessToken : refreshToken : _ <- T.lines <$> T.readFile file
+readToken :: (MonadIO m, MonadFail m, HasTokenFilePath m) => m Token
+readToken = do
+    file <- askTokenFilePath
+    accessToken : refreshToken : _ <- T.lines <$> liftIO (T.readFile file)
     return $ Token { accessToken, refreshToken, expiresIn = Nothing }
 
-writeToken :: FilePath -> Token -> IO ()
-writeToken file token = do
-    T.writeFile file $ T.unlines [accessToken token, refreshToken token]
+writeToken :: (MonadIO m, HasTokenFilePath m) => Token -> m ()
+writeToken token = do
+    file <- askTokenFilePath
+    liftIO $ T.writeFile file $ T.unlines [accessToken token, refreshToken token]
 
-server :: BS.ByteString -> (Event -> IO ()) -> Server ServerAPI
-server secretKey cont = healthCheck :<|> tootReceiver secretKey cont
+server :: (Event -> AppT IO ()) -> ServerT ServerAPI (AppT Handler)
+server cont = healthCheck :<|> tootReceiver cont
 
+logInfo :: (MonadIO m) => T.Text -> m ()
+logInfo text = liftIO $ T.putStrLn $ "[INFO] " <> text
 
-app :: BS.ByteString -> (Event -> IO ()) -> Application
-app secretKey cont = serve serverApi (server secretKey cont)
+logError :: (MonadIO m) => T.Text -> m ()
+logError text = liftIO $ T.putStrLn $ "[ERROR] " <> text
 
-logInfo :: T.Text -> IO ()
-logInfo text = T.putStrLn $ "[INFO] " <> text
+canReadWrite :: (MonadIO m) => FilePath -> m Bool
+canReadWrite file = liftIO $ fileAccess file True True False
 
-logError :: T.Text -> IO ()
-logError text = T.putStrLn $ "[ERROR] " <> text
-
-canReadWrite :: FilePath -> IO Bool
-canReadWrite file = fileAccess file True True False
-
-checkTokenFile :: FilePath -> IO ()
-checkTokenFile tokenFile = do
-    exists <- fileExist tokenFile
+checkTokenFile :: (MonadIO m, HasTokenFilePath m) => m ()
+checkTokenFile = do
+    tokenFile <- askTokenFilePath
+    exists <- liftIO $ fileExist tokenFile
     unless exists $ do
         logError "Token file does not exist."
-        exitFailure
+        liftIO exitFailure
 
     has_proper_permission <- canReadWrite tokenFile
     unless has_proper_permission $ do
         logError "Token file does not have proper permission (the file must have read and write permission)."
-        exitFailure
+        liftIO exitFailure
+
+relay :: Event -> AppT IO ()
+relay event = do
+    logInfo "event received"
+    locked <- tweetIsLocked
+    if not locked then do
+        res <- sendToot $ eventObject event
+        case res of
+            Right () -> return ()
+            Left (TooManyRequests Nothing) -> do
+                logInfo $ "reach rate limit. block until" <> T.show (15 * 60 :: Int)
+                lockTweet $ 15 * 60
+            Left (TooManyRequests (Just reset)) -> do
+                logInfo $ "reach rate limit. block until" <> T.show (show reset)
+                currTime <- liftIO $ getCurrentTime
+                lockTweet $ diffUTCTime reset currTime
+            Left PS.Unauthorized -> logInfo "token may be expired"
+            Left (Other msg) -> logInfo msg
+    else
+        logInfo "now blocking"
 
 main :: IO ()
 main = do
     hSetBuffering stdout NoBuffering
+    runWithEnv $ do
+        checkTokenFile
 
-    env <- loadEnv
+        initToken <- readToken
+        tokenRef <- tokenRefresher 5 (\token -> logInfo "token refreshed" >> writeToken token) initToken
 
-    checkTokenFile (tokenFilePath env)
+        logInfo "server started"
 
-    initToken <- readToken (tokenFilePath env)
-    tokenRef <- tokenRefresher 5
-                               (credential env)
-                               initToken
-                               (\token -> logInfo "token refreshed" >> writeToken (tokenFilePath env) token)
-
-    tweetLock <- newMVar False
-
-    logInfo "server started!"
-
-    -- TODO: 未送信のポストをキューやらに格納させる
-    withStdoutLogger $ \logger ->
-        let settings = setPort (port env) $ setLogger logger defaultSettings
-            cont event = do
-                locked <- readMVar tweetLock
-
-                if not locked then do
-                    token <- readMVar tokenRef
-                    res <- sendToot (targetUser env) (catchingTag env) token $ eventObject event
-                    case res of
-                        Right () -> return ()
-                        Left (TooManyRequests Nothing) -> do
-                            logInfo $ "reach rate limit. block until " <> T.pack (show (15 * 60 :: Int))
-                            void $ forkIO $ bracket_ (swapMVar tweetLock True)
-                                                     (swapMVar tweetLock False)
-                                                     (threadDelay' $ 15 * 60)
-                        Left (TooManyRequests (Just reset)) -> do
-                            logInfo $ "reach rate limit. block until " <> T.pack (show reset)
-                            currTime <- getCurrentTime
-                            void $ forkIO $ bracket_ (swapMVar tweetLock True)
-                                                     (swapMVar tweetLock False)
-                                                     (threadDelay' $ diffUTCTime reset currTime)
-                        Left PS.Unauthorized -> logInfo "token may be expired"
-                        Left (Other msg) -> logInfo msg
-                else
-                    logInfo "now blocked"
-        in
-            runSettings settings (app (secretKey env) cont)
+        port <- askPort
+        env  <- ask
+        liftIO $ withStdoutLogger $ \logger -> do
+            let settings = setPort port . setLogger logger $ defaultSettings
+            runSettings settings $ serve serverApi $ hoistServer serverApi (runApp env tokenRef) (server relay)
 
 threadDelay' :: NominalDiffTime -> IO ()
 threadDelay' diff = threadDelay $ P.truncate $ diff * 10 ^ (6 :: Int)
 
-sendToot :: T.Text -> T.Text -> Token -> Toot -> IO (Either SendingPostError ())
-sendToot targetUser catchingTag token toot
-    | V.elem catchingTag . V.map T.toLower . V.map tagName $ tootTags toot
-    , targetUser == acctUsername (tootAccount toot)
-    , Just tweet' <- tootToTweet catchingTag toot
-        = tweet token tweet'
-    | otherwise = return $ Right ()
+sendToot :: (MonadIO m) => Toot -> AppT m (Either SendingPostError ())
+sendToot toot = do
+    contain <- containTargetTag
+    isFrom  <- isFromTargetUser
+
+    targetTag <- askCatchingTag
+    case tootToTweet targetTag toot of
+        Just tweet'
+            | contain && isFrom -> tweet tweet'
+        _ -> return $ Right ()
+  where
+    containTargetTag = do
+        tag <- askCatchingTag
+        return $ V.elem tag . V.map T.toLower . V.map tagName $ tootTags toot
+
+    isFromTargetUser = do
+        userName <- askTargetUser
+        return $ userName == acctUsername (tootAccount toot)
+
+
+-- sendToot' :: (MonadIO m) => T.Text -> T.Text -> Token -> Toot -> m (Either SendingPostError ())
+-- sendToot' targetUser catchingTag toot
+--     | V.elem catchingTag . V.map T.toLower . V.map tagName $ tootTags toot
+--     , targetUser == acctUsername (tootAccount toot)
+--     , Just tweet' <- tootToTweet catchingTag toot
+--         = tweet tweet'
+--     | otherwise = return $ Right ()
 
 tootToTweet :: T.Text -> Toot -> Maybe TW.Post
 tootToTweet catchingTag (Toot { tootContent = content, tootUrl = url }) =
