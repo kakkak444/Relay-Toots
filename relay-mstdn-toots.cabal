@@ -88,12 +88,14 @@ executable relay-mstdn-toots
                     , text
                     , time              ^>= 1.14
                     , unix              ^>= 2.8
+                    , unliftio          ^>= 0.2
                     , vector
                     , wai
                     , wai-logger
                     , warp
 
-    other-modules:    Data.Event
+    other-modules:    App
+                      Data.Event
                       Data.Twitter
                       Env
                       TokenRefresher
