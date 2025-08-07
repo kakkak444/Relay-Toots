@@ -16,13 +16,9 @@ import Prelude                    qualified as P
 import App
 import Control.Monad
 import Control.Monad.Reader
-import Data.Aeson
 import Data.Bifunctor                                    (first)
-import Data.ByteString            qualified as BS
-import Data.ByteString.Char8      qualified as BS8
 import Data.Event
 import Data.Text                  qualified as T
-import Data.Text.Encoding         qualified as T
 import Data.Text.IO               qualified as T
 import Data.Time.Clock
 import Data.Twitter                         as TW
@@ -77,14 +73,11 @@ server :: (Event -> AppT IO ()) -> ServerT ServerAPI (AppT Handler)
 server cont = healthCheck :<|> tootReceiver cont
 
 
-logJsonInfo :: (ToJSON a, MonadIO m) => a -> m ()
-logJsonInfo json = logInfo $ BS.toStrict $ "event = " <> encode json
+logInfo :: (MonadIO m) => T.Text -> m ()
+logInfo text = liftIO $ T.putStrLn $ "[INFO] " <> text
 
-logInfo :: (MonadIO m) => BS.ByteString -> m ()
-logInfo text = liftIO $ T.putStrLn . T.decodeUtf8 $ "[INFO] " <> text
-
-logError :: (MonadIO m) => BS.ByteString -> m ()
-logError text = liftIO $ T.putStrLn . T.decodeUtf8 $ "[ERROR] " <> text
+logError :: (MonadIO m) => T.Text -> m ()
+logError text = liftIO $ T.putStrLn $ "[ERROR] " <> text
 
 canReadWrite :: (MonadIO m) => FilePath -> m Bool
 canReadWrite file = liftIO $ fileAccess file True True False
@@ -111,20 +104,20 @@ relay event = do
         case res of
             Right () -> return ()
             Left (TooManyRequests Nothing) -> do
-                logInfo $ "reach rate limit. block until" <> BS8.pack (show (15 * 60 :: Int))
+                logInfo $ "reach rate limit. block until" <> T.show (15 * 60 :: Int)
                 lockTweet $ 15 * 60
             Left (TooManyRequests (Just reset)) -> do
-                logInfo $ "reach rate limit. block until" <> BS8.pack (show reset)
+                logInfo $ "reach rate limit. block until" <> T.show (show reset)
                 currTime <- liftIO $ getCurrentTime
                 lockTweet $ diffUTCTime reset currTime
             Left PS.Unauthorized -> logInfo "token may be expired"
-            Left (Other msg) -> logInfo $ T.encodeUtf8 msg
+            Left (Other msg) -> logInfo msg
     else
         logInfo "now blocking"
 
 main :: IO ()
 main = do
-    hSetBuffering stdout LineBuffering
+    hSetBuffering stdout NoBuffering
     runWithEnv $ do
         checkTokenFile
 
