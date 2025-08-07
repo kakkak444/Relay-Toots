@@ -108,4 +108,11 @@ executable relay-mstdn-toots
     -- Base language which the package is written in.
     default-language: GHC2021
 
-    ghc-options: -threaded -O2 -with-rtsopts=-N -static
+    if flag(release)
+        ghc-options: -threaded -O2 -with-rtsopts=-N -static
+    else
+        ghc-options: -O0 -threaded -with-rtsopts=-N
+
+flag release
+    default: False
+    manual: True
