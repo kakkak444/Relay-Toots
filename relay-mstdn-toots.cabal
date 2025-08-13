@@ -85,6 +85,8 @@ executable relay-mstdn-toots
                     , req               ^>= 3.13
                     , servant
                     , servant-server    ^>= 0.20
+                    , stm               ^>= 2.5
+                    , stm-chans         ^>= 3.0
                     , text
                     , time              ^>= 1.14
                     , unix              ^>= 2.8
@@ -98,6 +100,7 @@ executable relay-mstdn-toots
                       Data.Event
                       Data.Twitter
                       Env
+                      Logger
                       TokenRefresher
                       TootReceiver
                       PostSender
