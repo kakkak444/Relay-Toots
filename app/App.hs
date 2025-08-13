@@ -9,6 +9,7 @@
 
 module App
     ( module Env
+    , module Logger
 
     , AppT
     , hoistApp
@@ -34,6 +35,7 @@ import Data.Text            qualified as T
 import Data.Time.Clock
 import Data.Twitter
 import Env
+import Logger
 import UnliftIO                             (MonadUnliftIO)
 
 
@@ -43,8 +45,9 @@ data AppConfig = AppConfig
     , appTweetLocker   :: MVar () -- ^ empty => locked, full => not locked
     }
 
-newtype AppT m a = AppT { unAppT :: ReaderT AppConfig m a }
-    deriving newtype ( Functor, Applicative, Monad, MonadTrans
+newtype AppT m a = AppT { unAppT :: ReaderT AppConfig (LoggingT m) a }
+    deriving newtype ( Functor, Applicative, Monad
+                     , MonadFail
                      , MonadReader AppConfig
                      , MonadIO, MonadUnliftIO
                      , HasSecretKey
@@ -55,17 +58,18 @@ newtype AppT m a = AppT { unAppT :: ReaderT AppConfig m a }
                      , HasPort
                      , HasTwitterToken
                      , HasTweetLock
+                     , HasLogger
                      )
 
 
-runApp :: (MonadIO m) => Env -> MVar Token -> AppT m a -> m a
+runApp :: (MonadIO m) => Env -> MVar Token -> AppT m a -> LoggingT m a
 runApp env refreshingToken app = do
     locker   <- liftIO $ newMVar ()
     let config = AppConfig { appEnv = env, appTwitterToken = refreshingToken, appTweetLocker = locker }
     runReaderT (unAppT app) config
 
 hoistApp :: (forall a. m a -> n a) -> AppT m x -> AppT n x
-hoistApp f (AppT app) = AppT $ ReaderT $ \env -> f $ runReaderT app env
+hoistApp f (AppT app) = AppT $ ReaderT $ \env -> hoistLogging f $ runReaderT app env
 
 
 class (Monad m) => HasSecretKey m where

@@ -22,13 +22,9 @@ import Data.Aeson.Lens
 import Data.Time
 import Data.Text                  qualified as T
 import Data.Text.Encoding         qualified as T
-import Data.Text.IO               qualified as T
 import Data.Twitter                         as P
 import Network.HTTP.Req
 
-
-logInfo :: (MonadIO m) => T.Text -> m ()
-logInfo text = liftIO $ T.putStrLn $ "[INFO] " <> text
 
 data SendingPostError
     = Unauthorized
@@ -38,7 +34,7 @@ data SendingPostError
 
 instance Exception SendingPostError
 
-tweet :: (MonadIO m, HasTwitterToken m) => Post -> m (Either SendingPostError ())
+tweet :: (MonadIO m, HasTwitterToken m, HasLogger m) => Post -> m (Either SendingPostError ())
 tweet post = do
     token <- askTwitterToken
     logInfo "tweeting !"

@@ -10,7 +10,8 @@
 
 module Main (main) where
 
-import App
+import App                                        hiding (LogLevel(..))
+import App                        qualified as AP
 import Control.Monad
 import Control.Monad.Reader
 import Data.Bifunctor                                    (first)
@@ -20,8 +21,9 @@ import Data.Text.IO               qualified as T
 import Data.Time.Clock
 import Data.Twitter                         as TW
 import Data.Vector                qualified as V
+import Network.HTTP.Types.Status
+import Network.Wai
 import Network.Wai.Handler.Warp
-import Network.Wai.Logger                                (withStdoutLogger)
 import PostSender                           as PS
 import Servant
 import System.Exit
@@ -32,7 +34,6 @@ import Text.Pandoc.Readers.HTML
 import Text.Pandoc.Writers
 import TokenRefresher
 import TootReceiver
-import UnliftIO                                   hiding (Handler)
 
 
 runWithEnv :: (MonadIO m) => ReaderT Env m a -> m a
@@ -64,16 +65,10 @@ writeToken token = do
 server :: (Event -> AppT IO ()) -> ServerT ServerAPI (AppT Handler)
 server cont = healthCheck :<|> tootReceiver cont
 
-logInfo :: (MonadIO m) => T.Text -> m ()
-logInfo text = liftIO $ T.putStrLn $ "[INFO] " <> text
-
-logError :: (MonadIO m) => T.Text -> m ()
-logError text = liftIO $ T.putStrLn $ "[ERROR] " <> text
-
 canReadWrite :: (MonadIO m) => FilePath -> m Bool
 canReadWrite file = liftIO $ fileAccess file True True False
 
-checkTokenFile :: (MonadIO m, HasTokenFilePath m) => m ()
+checkTokenFile :: (MonadIO m, HasTokenFilePath m, HasLogger m) => m ()
 checkTokenFile = do
     tokenFile <- askTokenFilePath
     exists <- liftIO $ fileExist tokenFile
@@ -106,22 +101,31 @@ relay event = do
     else
         logInfo "now blocking"
 
+warpLogger :: LogChan -> Request -> Status -> Maybe Integer -> IO ()
+warpLogger logChan req status _ = runLoggingT logChan $ logInfo $ T.intercalate " " [clientIP, method, path, ver, sc]
+  where
+    method   = T.show $ requestMethod req
+    ver      = T.show $ httpVersion   req
+    clientIP = T.show $ remoteHost    req
+    sc       = T.show $ statusCode status
+    path     = "/" <> T.intercalate "/" (pathInfo req)
+
 main :: IO ()
 main = do
-    hSetBuffering stdout NoBuffering
-    runWithEnv $ do
-        checkTokenFile
+    runStdoutLoggerT AP.TRACE $ do
+        runWithEnv $ do
+            checkTokenFile
 
-        initToken <- readToken
-        tokenRef <- tokenRefresher 5 (\token -> logInfo "token refreshed" >> writeToken token) initToken
+            initToken <- readToken
+            tokenRef <- tokenRefresher 5 (\token -> logInfo "token refreshed" >> writeToken token) initToken
 
-        logInfo "server started"
+            logInfo "server started"
 
-        port <- askPort
-        env  <- ask
-        liftIO $ withStdoutLogger $ \logger -> do
-            let settings = setPort port . setLogger logger $ defaultSettings
-            runSettings settings $ serve serverApi $ hoistServer serverApi (runApp env tokenRef) (server relay)
+            port <- askPort
+            env  <- ask
+            logChan <- askLogChan
+            let settings = setPort port . setLogger (warpLogger logChan) $ defaultSettings
+            liftIO $ runSettings settings $ serve serverApi $ hoistServer serverApi (runLoggingT logChan . runApp env tokenRef) (server relay)
 
 sendToot :: (MonadIO m) => Toot -> AppT m (Either SendingPostError ())
 sendToot toot = do
