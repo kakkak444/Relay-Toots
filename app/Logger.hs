@@ -88,7 +88,7 @@ hoistLogging f (LoggingT m) = LoggingT $ ReaderT $ \e -> f $ runReaderT m e
 
 loggerThread :: LogLevel -> LogChan -> IO a
 loggerThread logLevel (LogChan chan) = forever $
-    handle (\(_e :: IOException) -> return ()) $
+    handle (\(e :: IOException) -> print e) $
     do
         event@(LogEvent level _ _) <- atomically $ readTBChan chan
         unless (level < logLevel) $
@@ -102,7 +102,7 @@ defaultLogCapacity = 256
 
 runStdoutLoggerT :: (MonadIO m) => LogLevel -> LoggingT m a -> m a
 runStdoutLoggerT logLevel (LoggingT m) = do
-    liftIO $ hSetBuffering stdout LineBuffering
+    liftIO $ hSetBuffering stdout NoBuffering
     chan <- liftIO $ LogChan <$> newTBChanIO defaultLogCapacity
     _ <- liftIO $ forkIO $ loggerThread logLevel chan
     runReaderT m chan
