@@ -45,7 +45,7 @@ import Data.Time.Clock
 import Data.Time.Format.ISO8601                     (iso8601Show)
 import Data.Text                     qualified as T
 import Data.Text.IO.Utf8             qualified as T
-import System.IO                                    (stdout, hSetBuffering, BufferMode(..))
+import System.IO                                    (hFlush, stdout, hSetBuffering, BufferMode(..))
 import UnliftIO                                     (MonadUnliftIO)
 
 
@@ -81,7 +81,7 @@ class (Monad m) => HasLogger m where
 instance (Monad m) => HasLogger (LoggingT m) where
     askLogChan = ask
 instance (HasLogger m) => HasLogger (ReaderT e m) where
-    askLogChan = askLogChan
+    askLogChan = lift askLogChan
 
 hoistLogging :: (forall x. m x -> n x) -> LoggingT m a -> LoggingT n a
 hoistLogging f (LoggingT m) = LoggingT $ ReaderT $ \e -> f $ runReaderT m e
@@ -91,8 +91,9 @@ loggerThread logLevel (LogChan chan) = forever $
     handle (\(e :: IOException) -> print e) $
     do
         event@(LogEvent level _ _) <- atomically $ readTBChan chan
-        unless (level < logLevel) $
+        when (level >= logLevel) $ do
             T.putStrLn $ toText event
+            hFlush stdout
 
 toText :: LogEvent -> T.Text
 toText (LogEvent level time content) = T.concat ["[", T.show level, "] [", T.pack $ iso8601Show time, "] ", content]
