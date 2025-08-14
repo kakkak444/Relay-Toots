@@ -5,6 +5,8 @@
     file, You can obtain one at https://mozilla.org/MPL/2.0/.
 -}
 
+{-# LANGUAGE OverloadedStrings #-}
+
 module TokenRefresher
     ( TokenRefreshError
     , tokenRefresher
@@ -33,8 +35,10 @@ defaultExpiresIn = 3600
 defaultInterval :: NominalDiffTime
 defaultInterval = 30
 
-tokenRefresher :: forall m. (MonadUnliftIO m, MonadIO m, HasCredential m) => Int -> (Token -> m ()) -> Token -> m (MVar Token)
+tokenRefresher :: forall m. (MonadUnliftIO m, MonadIO m, HasCredential m, HasLogger m) => Int -> (Token -> m ()) -> Token -> m (MVar Token)
 tokenRefresher maxRetry fn initToken = do
+    logDebug' "initializing..."
+
     cred <- askCredential
     newToken <- refresh cred initToken
     case newToken of
@@ -46,10 +50,14 @@ tokenRefresher maxRetry fn initToken = do
             _ <- forkIO $ threadDelay' expiresIn' >> go 0 tokenRef
             return tokenRef
   where
+    logDebug' = logDebugN "tokenRefresher"
+
     go :: Int -> MVar Token -> m a
     go !retried tokenRef
         | retried >= maxRetry = throwIO TokenRefreshFailed
         | otherwise = do
+            logDebug' "token refreshing..."
+
             cred <- askCredential
             oldToken <- readMVar tokenRef
             newToken <- modifyMVar tokenRef $ \token -> do

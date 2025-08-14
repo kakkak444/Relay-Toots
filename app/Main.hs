@@ -51,14 +51,18 @@ healthCheck = do
     return $ T.pack "healthy"
 
 
-readToken :: (MonadIO m, MonadFail m, HasTokenFilePath m) => m Token
+readToken :: (MonadIO m, MonadFail m, HasTokenFilePath m, HasLogger m) => m Token
 readToken = do
+    logDebug "reading token from file..."
+
     file <- askTokenFilePath
     accessToken : refreshToken : _ <- T.lines <$> liftIO (T.readFile file)
     return $ Token { accessToken, refreshToken, expiresIn = Nothing }
 
-writeToken :: (MonadIO m, HasTokenFilePath m) => Token -> m ()
+writeToken :: (MonadIO m, HasTokenFilePath m, HasLogger m) => Token -> m ()
 writeToken token = do
+    logDebug "writing token to file..."
+
     file <- askTokenFilePath
     liftIO $ T.writeFile file $ T.unlines [accessToken token, refreshToken token]
 
@@ -70,6 +74,8 @@ canReadWrite file = liftIO $ fileAccess file True True False
 
 checkTokenFile :: (MonadIO m, HasTokenFilePath m, HasLogger m) => m ()
 checkTokenFile = do
+    logDebug "token file checking..."
+
     tokenFile <- askTokenFilePath
     exists <- liftIO $ fileExist tokenFile
     unless exists $ do
