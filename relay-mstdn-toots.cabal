@@ -113,7 +113,7 @@ executable relay-mstdn-toots
     default-language: GHC2021
 
     if flag(release)
-        ghc-options: -threaded -O2 -with-rtsopts=-N -static
+        ghc-options: -threaded -O2 -static -rtsopts
     else
         ghc-options: -O0 -threaded -with-rtsopts=-N
 
