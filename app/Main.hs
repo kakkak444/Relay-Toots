@@ -16,6 +16,7 @@ import Control.Monad
 import Control.Monad.Reader
 import Data.Bifunctor                                    (first)
 import Data.Event
+import Data.Functor
 import Data.Text                  qualified as T
 import Data.Text.IO               qualified as T
 import Data.Time.Clock
@@ -135,15 +136,23 @@ main = do
 
 sendToot :: (MonadIO m) => Toot -> AppT m (Either SendingPostError ())
 sendToot toot = do
+    logInfo' "send toot"
+
     contain <- containTargetTag
     isFrom  <- isFromTargetUser
 
     targetTag <- askCatchingTag
     case tootToTweet targetTag toot of
         Just tweet'
-            | contain && isFrom -> tweet tweet'
-        _ -> return $ Right ()
+            | contain && isFrom -> do
+                logInfo' "toot sending..."
+                res <- tweet tweet'
+                logInfo' "toot has sent."
+                return res
+        _ -> logInfo' "no need to send" $> Right ()
   where
+    logInfo' = logInfoN "sendToot"
+
     containTargetTag = do
         tag <- T.toLower <$> askCatchingTag
         return $ V.elem tag . V.map T.toLower . V.map tagName $ tootTags toot
