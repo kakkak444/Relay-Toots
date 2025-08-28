@@ -145,7 +145,7 @@ sendToot toot = do
         _ -> return $ Right ()
   where
     containTargetTag = do
-        tag <- askCatchingTag
+        tag <- T.toLower <$> askCatchingTag
         return $ V.elem tag . V.map T.toLower . V.map tagName $ tootTags toot
 
     isFromTargetUser = do
