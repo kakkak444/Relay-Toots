@@ -68,7 +68,6 @@ executable relay-mstdn-toots
 
     -- Other library packages from which modules are imported.
     build-depends:    aeson
-                    , aeson-pretty
                     , base              ^>= 4.21.0.0
                     , base64-bytestring ^>= 1.2
                     , bytestring
@@ -87,15 +86,12 @@ executable relay-mstdn-toots
                     , req               ^>= 3.13
                     , servant
                     , servant-server    ^>= 0.20
-                    , stm               ^>= 2.5
-                    , stm-chans         ^>= 3.0
                     , text
                     , time              ^>= 1.14
                     , unix              ^>= 2.8
                     , unliftio          ^>= 0.2
                     , vector
                     , wai
-                    , wai-logger
                     , warp
 
     other-modules:    App
