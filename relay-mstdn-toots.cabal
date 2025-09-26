@@ -75,6 +75,7 @@ executable relay-mstdn-toots
                     , crypton           ^>= 1.0
                     , deriving-aeson    ^>= 0.2
                     , exceptions
+                    , elementary-logger ^>= 0.1
                     , http-client
                     , http-media
                     , http-types
@@ -101,7 +102,6 @@ executable relay-mstdn-toots
                       Data.Event
                       Data.Twitter
                       Env
-                      Logger
                       TokenRefresher
                       TootReceiver
                       PostSender
