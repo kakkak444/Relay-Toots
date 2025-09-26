@@ -35,7 +35,7 @@ defaultExpiresIn = 3600
 defaultInterval :: NominalDiffTime
 defaultInterval = 30
 
-tokenRefresher :: forall m. (MonadUnliftIO m, MonadIO m, HasCredential m, HasLogger m) => Int -> (Token -> m ()) -> Token -> m (MVar Token)
+tokenRefresher :: forall m. (MonadUnliftIO m, MonadIO m, HasCredential m, MonadLogger m) => Int -> (Token -> m ()) -> Token -> m (MVar Token)
 tokenRefresher maxRetry fn initToken = do
     logDebug' "initializing..."
 

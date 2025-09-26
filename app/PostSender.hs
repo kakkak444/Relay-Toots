@@ -34,7 +34,7 @@ data SendingPostError
 
 instance Exception SendingPostError
 
-tweet :: (MonadIO m, HasTwitterToken m, HasLogger m) => Post -> m (Either SendingPostError ())
+tweet :: (MonadIO m, HasTwitterToken m, MonadLogger m) => Post -> m (Either SendingPostError ())
 tweet post = do
     token <- askTwitterToken
     logInfo "tweeting !"

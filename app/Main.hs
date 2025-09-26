@@ -19,9 +19,11 @@ import Data.Event
 import Data.Functor
 import Data.Text                  qualified as T
 import Data.Text.IO               qualified as T
+import Data.Text.Lazy             qualified as TL
 import Data.Time.Clock
 import Data.Twitter                         as TW
 import Data.Vector                qualified as V
+import Elementary.Logger.Internal
 import Network.HTTP.Types.Status
 import Network.Wai
 import Network.Wai.Handler.Warp
@@ -40,6 +42,9 @@ import TootReceiver
 runWithEnv :: (MonadIO m) => ReaderT Env m a -> m a
 runWithEnv app = loadEnv >>= runReaderT app
 
+instance (MonadLogger m) => MonadLogger (ReaderT Env m) where
+    askLogChan = lift askLogChan
+
 type HealthCheckAPI  = Get '[PlainText] T.Text
 type ServerAPI = HealthCheckAPI :<|> TootReceiverAPI
 
@@ -52,7 +57,7 @@ healthCheck = do
     return $ T.pack "healthy"
 
 
-readToken :: (MonadIO m, MonadFail m, HasTokenFilePath m, HasLogger m) => m Token
+readToken :: (MonadIO m, MonadFail m, HasTokenFilePath m, MonadLogger m) => m Token
 readToken = do
     logDebug "reading token from file..."
 
@@ -60,7 +65,7 @@ readToken = do
     accessToken : refreshToken : _ <- T.lines <$> liftIO (T.readFile file)
     return $ Token { accessToken, refreshToken, expiresIn = Nothing }
 
-writeToken :: (MonadIO m, HasTokenFilePath m, HasLogger m) => Token -> m ()
+writeToken :: (MonadIO m, HasTokenFilePath m, MonadLogger m) => Token -> m ()
 writeToken token = do
     logDebug "writing token to file..."
 
@@ -73,7 +78,7 @@ server cont = healthCheck :<|> tootReceiver cont
 canReadWrite :: (MonadIO m) => FilePath -> m Bool
 canReadWrite file = liftIO $ fileAccess file True True False
 
-checkTokenFile :: (MonadIO m, HasTokenFilePath m, HasLogger m) => m ()
+checkTokenFile :: (MonadIO m, HasTokenFilePath m, MonadLogger m) => m ()
 checkTokenFile = do
     logDebug "token file checking..."
 
@@ -97,25 +102,25 @@ relay event = do
         case res of
             Right () -> return ()
             Left (TooManyRequests Nothing) -> do
-                logInfo $ "reach rate limit. block until" <> T.show (15 * 60 :: Int)
+                logInfo $ "reach rate limit. block until" <> TL.show (15 * 60 :: Int)
                 lockTweet $ 15 * 60
             Left (TooManyRequests (Just reset)) -> do
-                logInfo $ "reach rate limit. block until" <> T.show (show reset)
+                logInfo $ "reach rate limit. block until" <> TL.show (show reset)
                 currTime <- liftIO $ getCurrentTime
                 lockTweet $ diffUTCTime reset currTime
             Left PS.Unauthorized -> logInfo "token may be expired"
-            Left (Other msg) -> logInfo msg
+            Left (Other msg) -> logInfo $ TL.fromStrict msg
     else
         logInfo "now blocking"
 
 warpLogger :: LogChan -> Request -> Status -> Maybe Integer -> IO ()
-warpLogger logChan req status _ = runLoggingT logChan $ logInfo $ T.intercalate " " [clientIP, method, path, ver, sc]
+warpLogger logChan req status _ = flip runLoggerT logChan $ logInfo $ TL.intercalate " " [clientIP, method, path, ver, sc]
   where
-    method   = T.show $ requestMethod req
-    ver      = T.show $ httpVersion   req
-    clientIP = T.show $ remoteHost    req
-    sc       = T.show $ statusCode status
-    path     = "/" <> T.intercalate "/" (pathInfo req)
+    method   = TL.show $ requestMethod req
+    ver      = TL.show $ httpVersion   req
+    clientIP = TL.show $ remoteHost    req
+    sc       = TL.show $ statusCode status
+    path     = "/" <> TL.intercalate "/" (map TL.fromStrict $ pathInfo req)
 
 main :: IO ()
 main = do
@@ -132,7 +137,7 @@ main = do
             env  <- ask
             logChan <- askLogChan
             let settings = setPort port . setLogger (warpLogger logChan) $ defaultSettings
-            liftIO $ runSettings settings $ serve serverApi $ hoistServer serverApi (runLoggingT logChan . runApp env tokenRef) (server relay)
+            liftIO $ runSettings settings $ serve serverApi $ hoistServer serverApi (flip runLoggerT logChan . runApp env tokenRef) (server relay)
 
 sendToot :: (MonadIO m) => Toot -> AppT m (Either SendingPostError ())
 sendToot toot = do
