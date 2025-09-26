@@ -5,6 +5,7 @@ WORKDIR /workspace
 RUN cabal update
 
 COPY ./relay-mstdn-toots.cabal /workspace/
+COPY ./cabal.project /workspace/
 
 RUN --mount=type=cache,target=/workspace/dist-newstyle cabal new-build --only-dependencies -f release --semaphore -j --enable-executable-stripping --enable-executable-static
 
